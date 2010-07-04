@@ -1,0 +1,86 @@
+#! /usr/bin/perl
+
+use strict;
+use warnings;
+use Digest::MD5;
+
+my %known_dig = ( '38bc39591fbfe48c395039cdf53a344d' => 'folder internal data');
+
+# parse mail messages (from perlop(1))
+my $id;
+my $exim_id;
+my $ctx;
+
+sub main {
+    while (<>) {
+	my $from__line = /^From \S+/;
+	my $in_header = $from__line .. /^$/;
+	my $in_body   = /^$/ .. ($from__line || eof);
+#    print "<$in_header | $in_body > $_";
+	if ($from__line) {
+	    eom() if defined $id;
+	    $id = '?';
+	}
+	if ($in_header) {
+	    if (/^Message-ID:\s*(.*)$/i) {
+		warn "dup message-id in header: $id => $1" if defined $id && $id ne '?';
+		$id = $1;
+	    } elsif (/\bid ([a-zA-Z0-9]{6}-[a-zA-Z0-9]{6}-[a-zA-Z0-9]{2})\b/) {
+		$exim_id = $1;
+	    }
+	} else {		# in body
+	    $ctx ||= Digest::MD5->new;
+	    $ctx->add($_);
+	}
+    } continue {
+	if (eof) {
+	    eom() if defined $id;
+	    close ARGV;		# reset $. each file
+	}
+    }
+
+    show_dup();
+}
+
+
+my %id; # key = $id_or_other, value = \@body_md5
+my %dig; # key = body_md5, value = \@id_or_other
+
+sub eom {
+    my $dig = $ctx->hexdigest;
+    if ($id eq '?') {
+	$id = "exim:$exim_id ln:$.";
+    }
+    $id .= " ($known_dig{$dig})" if $known_dig{$dig};
+    push @{ $id{$id} }, $dig;
+    push @{ $dig{$dig} }, $id;
+    print "$dig  $id\t$ARGV\n";
+    undef $ctx;
+    undef $id;
+}
+
+sub show_dup {
+    while (my ($id, $digs) = each %id) {
+	next if @$digs == 1;
+	next if all_same(@$digs);
+	local $" = " ";
+	warn "Re-used Message-ID: $id  ==> @{$digs}\n";
+    }
+    while (my ($dig, $ids) = each %dig) {
+	next if @$ids == 1;
+	next if all_same(@$ids);
+	local $" = "\n\t";
+	warn "Dup message body $dig with different ids\n\t@{$ids}\n";
+    }
+}
+
+sub all_same {
+    my $first = shift;
+    while (@_) {
+	return 0 if $first ne shift;
+    }
+    return 1;
+}
+
+
+main();
