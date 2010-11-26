@@ -1,0 +1,81 @@
+#! /usr/bin/perl -T
+
+use strict;
+use warnings;
+
+use Cwd 'cwd';
+use File::Temp 'tempfile';
+
+sub main {
+    my $here = cwd();
+
+    warn "$0: Running for $here";
+    my $cfg = Binlinks->new_for_config("$here/.binlinks");
+
+    write_file($here, ".gitignore", $cfg->gitignore);
+}
+
+
+sub write_file {
+    my ($dir, $leaf, $contents) = @_;
+
+    my ($fh, $tmp_fn) = tempfile("$leaf.XXXXXX", DIR => $dir);
+    print {$fh} $contents
+      or die "Failed to write to $tmp_fn: $!";
+    close $fh
+      or die "Failed to close $tmp_fn: $!";
+
+    rename($tmp_fn, "$dir/$leaf")
+      or die "Rename to $dir/$leaf failed: $!";
+}
+
+main();
+
+
+package Binlinks;
+use strict;
+use warnings;
+
+sub new_for_config {
+    my ($proto, $fn) = @_;
+    my $self = bless { config => $fn }, ref($proto) || $proto;
+    $self->_init;
+    return $self;
+}
+
+
+sub _init {
+    my ($self) = @_;
+    open my $fh, "<", $$self{config}
+      or die "Can't read config file $$self{config}: $!";
+
+    while (<$fh>) {
+	
+    }
+}
+
+
+sub gitignore {
+    return <<BOILERPLATE;
+
+# emacs
+*~
+.\#*
+\#*\#
+
+# this (will be) auto-generated
+.gitignore
+
+# these symlinks to programs (will be) auto-generated
+ack
+alldb.pl
+
+# these symlinks to projects (will be) auto-generated
+,cpan-pfx,bin
+,cvswork-toy,bin
+,wtsi-scripts,bin.junk
+
+BOILERPLATE
+}
+
+1;
