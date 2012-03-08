@@ -10,17 +10,20 @@ sub main {
     my ($user, $pass) = qw( ottro );
     my @dbinst;
 #    push @dbinst, qw( vegabuild:3304 vegabuild:5304 );
-    push @dbinst, qw( otterlive:3301 otterpipe1:3302 otterpipe2:3303 );
+    push @dbinst, qw( lutra8:3324 lutra5:3322 lutra7:3323 );
+    push @dbinst, qw( lutra6:3324 lutra6:3322 lutra6:3323 );
+
     my $code = \&show_table_type;
+$code = \&show_tables_dulike;
 
     my @all_tables = enumerate_all($user, $pass, @dbinst);
 
     # At this point we have no open connections - we could dice
     # @all_tables up and allocate to forked processes.
 
-#    run_serial($code, $user, $pass, @all_tables);
+    run_serial($code, $user, $pass, @all_tables);
 #    run_parallel($code, $user, $pass, @all_tables);
-    run_parallel($code, $user, $pass, deal_alltables(4, @all_tables));
+#    run_parallel($code, $user, $pass, deal_alltables(4, @all_tables));
 }
 
 sub run_serial {
@@ -40,7 +43,7 @@ sub run_parallel {
 
     $SIG{INT} = sub {
 	if ($pid) {
-	    warn "Caught SIGINT, killing kids...\n";
+	    warn "Caught SIGINT, killing kids (@kid)...\n";
 	    kill 2, @kid;
 	} else {
 	    die "Child ($dbinst) caught SIGINT\n";
@@ -181,5 +184,32 @@ sub show_table_size {
     my ($dbh, $db_what, $tbl) = @_;
 
     my @info = $dbh->selectrow_array("show table status like ?", {}, $tbl);
-    printf("  %s:\t%.3f MiB\n", $db_what, $info[6] / 1024 / 1024);
+
+    printf("  %s:\t%.3f MiB tbl + %.3f MiB idx\t%d rows apprx\n", $db_what,
+	   $info[6] / 1024 / 1024,
+	   $info[8] / 1024 / 1024,
+	   $info[4]);
+}
+
+sub show_tables_dulike {
+    my ($dbh, $db_what, $tbl) = @_;
+
+    my @info = $dbh->selectrow_array("show table status like ?", {}, $tbl);
+    my $tsz = $info[6] / 1024;
+    my $isz = $info[8] / 1024;
+
+    my ($db, $inst) = $db_what =~ m{^(\S+) > (\w+)\.\w+$}
+      or die "Can't get table path from $db_what";
+
+    printf("%d\t/DB/%s/%s/%s/\n", $tsz + $isz, $db, $inst, $tbl);
+    printf("%d\t/DB/%s/%s/%s/idcs\n", $isz,    $db, $inst, $tbl);
+}
+
+sub show_rowcounts {
+    my ($dbh, $db_what, $tbl) = @_;
+
+    my ($rows) = eval {
+	$dbh->selectrow_array("select count(*) from `$tbl`");
+    } || $@;
+    printf("  %s:\t%s\n", $db_what, $rows);
 }
