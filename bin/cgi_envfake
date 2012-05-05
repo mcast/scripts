@@ -1,0 +1,6 @@
+#! /bin/sh
+
+export SERVER_PORT=80 SERVER_NAME=commandline SCRIPT_NAME="$1" REQUEST_METHOD=GET GATEWAY_INTERFACE=CGI/1.1
+# enough to keep plackup happy
+
+exec "$@"
