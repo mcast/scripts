@@ -1,0 +1,42 @@
+#! /bin/sh
+
+clrtxt() {
+    exec perl -pe 'BEGIN { $clr=shift; ++$| } s{\A}{\x1B[${clr}m}; s{\z}{\x1B[00m}' $1
+
+    # From "dircolors -p",
+    #
+    # Attribute codes:
+    # 00=none 01=bold 04=underscore 05=blink 07=reverse 08=concealed
+    # Text color codes:
+    # 30=black 31=red 32=green 33=yellow 34=blue 35=magenta 36=cyan 37=white
+    # Background color codes:
+    # 40=black 41=red 42=green 43=yellow 44=blue 45=magenta 46=cyan 47=white
+}
+
+
+# echo foo | clrtxt '01;04;33;44'
+# echo bar
+# echo baz | clrtxt 45
+
+# rederr false; echo $?
+# rederr true; echo $?
+
+
+cmd=$1
+shift
+args=$*
+
+retfn=$( mktemp -t rederr.XXXXXX )
+trap "rm -f $retfn" EXIT
+
+do_run() {
+    $cmd $args
+    echo $? > $retfn
+}
+
+# Unfortunately, this does not preserve the order of interleaved lines
+# on stdout & stderr...
+(( do_run | clrtxt 32 >&3 ) 2>&1 | clrtxt 31 >&3 ) 3>&1
+
+retval=$( cat $retfn )
+exit $retval
