@@ -1,0 +1,45 @@
+#! /bin/sh
+
+# in crontab,
+#
+#   mail-encrypted me@here -J -s "passphrase check" -a "In-Reply-To: <passphrase_check@$(hostname -f)>"
+#
+# RIP 1024D/565D1784 1024D/5C5D6D0B and others
+
+
+GPG_TO=
+MAIL_TO=
+MORE=1
+SOURCE=cat
+while [ $# > 0 ] && [ $MORE = 1 ]; do
+    sw="$1"
+    case "$sw" in
+        -h) printf "Syntax: %s [ -J ] <recipient>* [ other flags ]\n
+  -J   Generate junk content for the mail, instead of taking STDIN.
+
+Recipients for the purpose of encryption must be before any other
+flags, switches or recipient passed to mail(1).\n" "$0"
+            exit 4
+            ;;
+        -J) shift
+            if [ -x /usr/bin/fortune ]; then
+                SOURCE=/usr/bin/fortune
+            else
+                SOURCE="echo wibble"
+            fi
+            ;;
+        -*) MORE=0
+            # not shift
+            ;;
+        *) shift
+            GPG_TO="$GPG_TO -r $sw"
+            MAIL_TO="$MAIL_TO $sw"
+            ;;
+    esac
+done
+
+set -x
+
+$SOURCE | \
+    gpg -e $GPG_TO -a | \
+    mail $MAIL_TO -a 'Content-Type: text/plain; x-action=pgp-encrypted' "$@"
