@@ -38,7 +38,6 @@ flags, switches or recipient passed to mail(1).\n" "$0"
     esac
 done
 
-set -x
 
 $SOURCE | \
     gpg -e $GPG_TO -a | \
