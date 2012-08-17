@@ -40,5 +40,10 @@ done
 
 
 $SOURCE | \
-    gpg -e $GPG_TO -a | \
+    gpg -e $GPG_TO -a 2>&1 | \
     mail $MAIL_TO -a 'Content-Type: text/plain; x-action=pgp-encrypted' "$@"
+
+# Sends any gpg warnings to the mail too,
+# risk of interleave but we would soon find out.
+#
+#   gpg: $SELF: skipped: public key already present
