@@ -46,7 +46,6 @@ sub main {
 
 sub showpath {
     my @items = @_;
-    my %seen;
 
     for (my $i=0; $i < @items; $i++) {
 	my $var = $items[$i];
@@ -68,6 +67,7 @@ sub showpath {
 	}
 
 	# display
+        my %seen;
 	print "$key:\n";
 	foreach my $part (split /:/, $val) {
 	    $part =~ s{/+$}{};
