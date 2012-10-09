@@ -1,0 +1,78 @@
+#! /bin/bash
+
+# Intention: a simple script into which a process can pipe stuff,
+# reliably sending to IRC.
+#
+# Reality: big heap of yucky filtering, broken error handling.  Could
+# be fixed by swallowing sic into a Perl script.  More enthusiasm for
+# starting with POE::Component::IRC.
+
+
+: ${PIPE4NICK:="pipe4$USER"}
+: ${PIPE4DEST:="$USER"}
+
+if [ -z "$PIPE4SIC" ]; then
+    echo "Syntax: do_stuff | PIPE4SIC='-h irc.example.org' PIPE4DEST='#mychan' pipe4irc
+
+Pipe stuff over IRC to a user or channel.
+Filter out (ignore) all expected or boilerplate text from IRC server.
+" >&2
+    exit 1
+fi
+
+# filters for...
+#
+### sic-1.0 : Ubuntu 1.0-3
+#  irc.example.: 10/08/12 17:29 >< 376 mee_sic : End of /MOTD command.
+#  mee_sic     : 10/08/12 17:29 >< MODE mee_sic : +i
+#  Global      : 10/08/12 17:29 >< NOTICE mee_sic : /msg <service nick> help   - for assistance
+#  mee_bg      : 10/08/12 17:29 <mee_sic> fibbly bibble
+#
+### sic-1.1 : Ubuntu 1.1-4
+# irc.example.org: 10/08/12 21:39 >< NOTICE (AUTH): *** Looking up your hostname...
+# irc.example.org: 10/08/12 21:39 >< 001 (mee_sic2): Welcome to the Example Internet Relay Chat Network mee_sic2
+# irc.example.org: 10/08/12 21:39 >< 254 (mee_sic2 10): channels formed
+# #mee_tst    : 10/08/12 21:49 <mee_sic2> marfle barfle blop
+# mee_sic2    : 10/08/12 21:49 <mee_sic1> spigot spagghet
+
+outfilter() {
+ export PIPE4NICK
+ perl -e 'use strict; use warnings;
+
+ sub unkn { print "?? @_" }
+
+ my $NICK = $ENV{PIPE4NICK};
+ my $tok = qr{[-0-9a-zA-Z._]+};
+ while (<>) {
+   unless (s{^(#?$tok)\s*: ([0-9/]{8} [ 0-9:]{5}) }{}) {
+     unkn($_);
+     next;
+   }
+   my ($dst, $dt) = ($1, $2);
+   if (my ($op, $usr, $arg, $info) = m{>< (\w+) \(?($tok)\s*(.*)\s*:\s*(.*)$}) {
+     next if (grep { $op eq $_ } qw( 001 002 003 004 005 250 251 252 254 255 265 266 353 366 372 375 376 MODE NOTICE ))
+        and  (grep { $usr eq $_ } ("AUTH", $NICK));
+     $_ = "$op >< $arg : $info\n";
+   }
+   elsif (my ($src, $txt) = m{^<([0-9a-zA-Z._]+)> (.*)$}) {
+     next if $src eq $NICK; # echo of self
+     $_ = "$src\->$dst: $txt\n";
+   } else {
+     unkn($_);
+     next;
+   }
+   print;
+ }'
+}
+
+errfilter() {
+    perl -ne 'use strict; use warnings;
+ print unless m{^(error|sic): broken pipe$};
+'
+}
+
+(echo ":s $PIPE4DEST"; cat) | {
+    {
+        (sic -n "$PIPE4NICK" $PIPE4SIC; echo Exit code $?) | outfilter >&3
+    } 2>&1 | errfilter
+} 3>&1
