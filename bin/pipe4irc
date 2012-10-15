@@ -1,78 +1,139 @@
-#! /bin/bash
-
-# Intention: a simple script into which a process can pipe stuff,
-# reliably sending to IRC.
-#
-# Reality: big heap of yucky filtering, broken error handling.  Could
-# be fixed by swallowing sic into a Perl script.  More enthusiasm for
-# starting with POE::Component::IRC.
+#! /usr/bin/perl
+use strict;
+use warnings;
 
 
-: ${PIPE4NICK:="pipe4$USER"}
-: ${PIPE4DEST:="$USER"}
+=head1 NAME
 
-if [ -z "$PIPE4SIC" ]; then
-    echo "Syntax: do_stuff | PIPE4SIC='-h irc.example.org' PIPE4DEST='#mychan' pipe4irc
+pipe4irc - pipe from command line into IRC channel or to user
 
-Pipe stuff over IRC to a user or channel.
-Filter out (ignore) all expected or boilerplate text from IRC server.
-" >&2
-    exit 1
-fi
+=head1 SYNOPSIS
 
-# filters for...
-#
-### sic-1.0 : Ubuntu 1.0-3
-#  irc.example.: 10/08/12 17:29 >< 376 mee_sic : End of /MOTD command.
-#  mee_sic     : 10/08/12 17:29 >< MODE mee_sic : +i
-#  Global      : 10/08/12 17:29 >< NOTICE mee_sic : /msg <service nick> help   - for assistance
-#  mee_bg      : 10/08/12 17:29 <mee_sic> fibbly bibble
-#
-### sic-1.1 : Ubuntu 1.1-4
-# irc.example.org: 10/08/12 21:39 >< NOTICE (AUTH): *** Looking up your hostname...
-# irc.example.org: 10/08/12 21:39 >< 001 (mee_sic2): Welcome to the Example Internet Relay Chat Network mee_sic2
-# irc.example.org: 10/08/12 21:39 >< 254 (mee_sic2 10): channels formed
-# #mee_tst    : 10/08/12 21:49 <mee_sic2> marfle barfle blop
-# mee_sic2    : 10/08/12 21:49 <mee_sic1> spigot spagghet
+ do_stuff | pipe4irc
 
-outfilter() {
- export PIPE4NICK
- perl -e 'use strict; use warnings;
+ pipe4irc do_stuff
 
- sub unkn { print "?? @_" }
+=head1 DESCRIPTION
 
- my $NICK = $ENV{PIPE4NICK};
- my $tok = qr{[-0-9a-zA-Z._]+};
- while (<>) {
-   unless (s{^(#?$tok)\s*: ([0-9/]{8} [ 0-9:]{5}) }{}) {
-     unkn($_);
-     next;
-   }
-   my ($dst, $dt) = ($1, $2);
-   if (my ($op, $usr, $arg, $info) = m{>< (\w+) \(?($tok)\s*(.*)\s*:\s*(.*)$}) {
-     next if (grep { $op eq $_ } qw( 001 002 003 004 005 250 251 252 254 255 265 266 353 366 372 375 376 MODE NOTICE ))
-        and  (grep { $usr eq $_ } ("AUTH", $NICK));
-     $_ = "$op >< $arg : $info\n";
-   }
-   elsif (my ($src, $txt) = m{^<([0-9a-zA-Z._]+)> (.*)$}) {
-     next if $src eq $NICK; # echo of self
-     $_ = "$src\->$dst: $txt\n";
-   } else {
-     unkn($_);
-     next;
-   }
-   print;
- }'
+Intention: a simple script into which a process can pipe stuff,
+reliably sending to IRC.
+
+=cut
+
+
+use YAML qw( LoadFile DumpFile );
+use IRC::Utils qw( strip_formatting );
+use POE qw( Component::IRC );
+
+
+sub main {
+    # quick hack of a config
+    my %cfg;
+    my $cfg_fn = "$ENV{HOME}/.pipe4irc.yaml";
+    if (-f $cfg_fn) {
+        %cfg = %{ LoadFile($cfg_fn) };
+    } else {
+        %cfg =
+          (nick => "pipe4$ENV{USER}",
+           server => 'irc.example.org:16667',
+           dest => '#progress');
+        DumpFile($cfg_fn, \%cfg);
+        die "Wrote example config to $cfg_fn\n".
+          "You will need to configure it - end";
+    }
+
+    # quick hack of arg processing
+    if (@ARGV && (join ':', '', @ARGV, '') =~ m{:(-h|--help):}) {
+        print "Syntax: do_stuff | pipe4irc\n
+Pipe stuff over IRC to the user or channel configured in
+  $cfg_fn
+
+Attempt to provide a reliable delivery, by retrying, within limits.
+Print nothing except errors from IRC server and incoming replies.\n\n";
+        return 1;
+    }
+
+    my $irc = P4I::IRC->new($cfg{server}, $cfg{nick});
+    my $fhio = P4I::FHIO->new($irc, stdin => \*STDIN);
+
+    my $sess = plugnplay($irc, $fhio);
+#  $sess->option(trace => 1);
+
+  # global is exported from POE::Kernel by POE
+  $poe_kernel->run();
+  # returns after IRC shutdown
+
+    return 0;
 }
 
-errfilter() {
-    perl -ne 'use strict; use warnings;
- print unless m{^(error|sic): broken pipe$};
-'
+sub plugnplay {
+    my @obj = @_;
+
+    my @objlist = map {( $_, $_->want_events )} @obj;
+
+    my $sess = POE::Session->create
+      (object_states => \@objlist,
+       heap => {});
+
+    foreach my $obj (@obj) {
+        $obj->session_created($sess, $poe_kernel);
+    }
+
+    return $sess;
 }
 
-(echo ":s $PIPE4DEST"; cat) | {
-    {
-        (sic -n "$PIPE4NICK" $PIPE4SIC; echo Exit code $?) | outfilter >&3
-    } 2>&1 | errfilter
-} 3>&1
+exit main();
+
+
+package # internal - don't index
+  P4I::IRC;
+use strict;
+use warnings;
+
+sub new {
+    my ($called, $host, $nick) = @_;
+
+    my $port = 6667;
+    $port = $1 if $host =~ s/:(\d+)$//;
+
+    my $irc = POE::Component::IRC->spawn
+      (nick => $nick,
+       ircname => 'pipe4irc_ircname',
+       server => $host, port => $port,
+      ) or die "POE::Component::IRC spawn failed: $!";
+
+    my $self = { host => $host, port => $port,
+                 nick => $nick, irc => $irc };
+    bless $self, ref($called) || $called;
+
+    return $self;
+}
+
+sub want_ev {
+    return
+      [qw( _start irc_socketerr irc_connected ),
+       qw( irc_001 irc_321 irc_322 irc_323 ),
+       qw( irc_notice irc_msg irc_raw irc_raw_out )];
+}
+
+sub session_created {
+    my ($self, $sess, $kernel) = @_;
+    $kernel->sig(INT => "got_sig_int");
+    return ();
+}
+
+
+package # internal - don't index
+  P4I::FHIO;
+use strict;
+use warnings;
+
+sub new {
+    my ($called, $irc) = @_;
+
+    my $self = { irc => $irc };
+    bless $self, ref($called) || $called;
+    return $self;
+}
+
+1;
