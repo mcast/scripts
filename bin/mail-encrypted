@@ -11,7 +11,7 @@ GPG_TO=
 MAIL_TO=
 MORE=1
 SOURCE=cat
-while [ $# > 0 ] && [ $MORE = 1 ]; do
+while [ $# -gt 0 ] && [ $MORE = 1 ]; do
     sw="$1"
     case "$sw" in
         -h) printf "Syntax: %s [ -J ] <recipient>* [ other flags ]\n
