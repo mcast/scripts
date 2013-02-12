@@ -4,17 +4,18 @@ use strict;
 use warnings;
 
 use DBI;
-
+use Try::Tiny;
+use YAML 'Dump';
 
 sub main {
     my ($user, $pass) = qw( ottro );
     my @dbinst;
 #    push @dbinst, qw( vegabuild:3304 vegabuild:5304 );
     push @dbinst, qw( lutra8:3324 lutra5:3322 lutra7:3323 );
-    push @dbinst, qw( lutra6:3324 lutra6:3322 lutra6:3323 );
+#    push @dbinst, qw( lutra6:3324 lutra6:3322 lutra6:3323 );
 
     my $code = \&show_table_type;
-$code = \&show_tables_dulike;
+$code = \&show_meta_foodb_maybe;
 
     my @all_tables = enumerate_all($user, $pass, @dbinst);
 
@@ -152,7 +153,7 @@ sub deal_alltables {
 sub run_for_tables {
     my ($code, $user, $pass,   $dbinst, $dsn, $db_tables) = @_;
     # XXX: passing too much stuff in here
-    my $dbh = DBI->connect($dsn, $user, $pass, { RaiseError => 1 });
+    my $dbh = DBI->connect($dsn, $user, $pass, { RaiseError => 1, PrintError => 0 });
 
     eval {
 	foreach my $dbtbl (@$db_tables) {
@@ -191,20 +192,6 @@ sub show_table_size {
 	   $info[4]);
 }
 
-sub show_tables_dulike {
-    my ($dbh, $db_what, $tbl) = @_;
-
-    my @info = $dbh->selectrow_array("show table status like ?", {}, $tbl);
-    my $tsz = $info[6] / 1024;
-    my $isz = $info[8] / 1024;
-
-    my ($db, $inst) = $db_what =~ m{^(\S+) > (\w+)\.\w+$}
-      or die "Can't get table path from $db_what";
-
-    printf("%d\t/DB/%s/%s/%s/\n", $tsz + $isz, $db, $inst, $tbl);
-    printf("%d\t/DB/%s/%s/%s/idcs\n", $isz,    $db, $inst, $tbl);
-}
-
 sub show_rowcounts {
     my ($dbh, $db_what, $tbl) = @_;
 
@@ -212,4 +199,53 @@ sub show_rowcounts {
 	$dbh->selectrow_array("select count(*) from `$tbl`");
     } || $@;
     printf("  %s:\t%s\n", $db_what, $rows);
+}
+
+
+sub show_meta_foodb_maybe {
+    my ($dbh, $db_what, $tbl) = @_;
+    return () unless $db_what =~ /\.meta$/;
+
+    my ($rows) = try {
+        $dbh->selectall_arrayref(q{
+ select meta_key, meta_value
+ from meta where meta_key rlike 'db' or meta_value rlike 'host'
+});
+    } catch { [[ fail => $_ ]] };
+
+    my $updh = $dbh->prepare(q{
+ update meta set meta_value=? where meta_key=? and meta_value=?
+});
+
+    my @ignore_host =
+      (qr{^lutra\d$}, qr{^ens-livemirror(\.|$)}, qr{^otter(live|slave|pipe\d)$},
+       qr{^genebuild\d+(\.|$)}, 'mcs12',
+       qw( web-mem-pfam pfamdb2a pfam ensembldb.ensembl.org ));
+
+
+#    my $hdr = sprintf "\n%s\n%s\n", '-' x 40, $db_what;
+    my $hdr = sprintf "\n%s\n", $db_what;
+
+    foreach my $r (@$rows) {
+        my ($k, $v) = @$r;
+        next if $v eq '=otter';
+        next if $k =~ /dbid/ && $v =~ /^\d+$/;
+        if ($v =~ m{["']?-host['"]?\s*=>\s*["']([^"']+)['"]}i) {
+            my $host = $1;
+            next if grep { ref($_) ? $host =~ $_ : $host eq $_ } @ignore_host;
+        }
+# elsif ($v !~ /mcs4a/i) { next }
+        print $hdr if $hdr;
+        $hdr = '';
+        printf "  %-30s %s\n", $k, $v;
+
+### update needs privs!
+#     my $nv = $v;
+#     $nv =~ s{\b(mcs4a)\b}{mcs12}i;
+#     if ($nv ne $v) {
+#         my $rv = $updh->execute($nv, $k, $v);
+#         printf("updated %d row%s\n", $rv, $rv == 1 ?'':'s');
+#     }
+
+    }
 }
