@@ -4,7 +4,7 @@ use strict;
 use warnings ;
 
 use Cwd 'abs_path';
-use constant DEFAULT_PATHS => qw( PATH PERL5LIB LD_LIBRARY_PATH );
+use constant DEFAULT_PATHS => qw( PATH PERL5LIB LD_LIBRARY_PATH PERL_LOCAL_LIB_ROOT );
 
 =head1 NAME
 
