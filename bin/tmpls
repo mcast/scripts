@@ -1,3 +1,3 @@
 #! /bin/sh
 
-find /tmp /var/tmp -maxdepth 1 -user $USER -print0 | xargs -r0 ls --color -lartd
+find /tmp /var/tmp /dev/shm -maxdepth 1 -user $USER -print0 | xargs -r0 ls --color -lartd
