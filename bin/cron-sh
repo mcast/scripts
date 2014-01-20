@@ -1,0 +1,15 @@
+#! /bin/sh
+
+txt="$( crontab -l | grep -E '^[A-Z0-9_]+=' | sed -e 's/^/export /' )"
+if [ -z "$txt" ]; then
+    echo $0: nothing found >&2
+    exit 2
+fi
+
+if [ -n "$*" ]; then
+    crontab -l | grep "$@" | sed -e 's/^/  /'
+fi
+
+eval "$txt"
+export debian_chroot=cron-like:lvl=$SHLVL
+exec bash -i
