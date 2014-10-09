@@ -1,0 +1,35 @@
+#! /bin/sh
+
+
+# There may be
+#   /tmp/ssh-*/agent.$PID  (ssh-agent);  $PID is of its caller
+#
+# and/or
+#   /tmp/keyring-*/ssh (gnome-keyring-daemon)
+
+setup_vars() {
+    # Don't pester the X11 user
+    DISPLAY=
+
+    if [ -n "$SSH_AUTH_SOCK" ] && [ -S "$SSH_AUTH_SOCK" ] &&
+        [ -n "$SSH_AGENT_PID" ]; then
+        echo Warning: an ssh-agent is already set
+        return 0
+    fi >&2
+
+    # Assume there is just one agent running and accessible
+#    export SSH_AGENT_PID=$( pidof ssh-agent )
+#    export SSH_AGENT_PID=$( pidof gnome-keyring-daemon )
+    export SSH_AUTH_SOCK=$( echo /tmp/keyring-*/ssh )
+#    export SSH_AUTH_SOCK=$( echo /tmp/ssh-*/agent.* )
+
+    echo use $SSH_AUTH_SOCK of $SSH_AGENT_PID >&2
+    if [ -n "$SSH_AUTH_SOCK" ] && [ -S "$SSH_AUTH_SOCK" ] && [ -O "$SSH_AUTH_SOCK" ]; then
+        return 0
+    else
+        echo Error: cannot see your ssh-agent
+        return 1
+    fi >&2
+}
+
+setup_vars && "$@"
