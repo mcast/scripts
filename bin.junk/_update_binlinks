@@ -1,0 +1,340 @@
+#! /usr/bin/perl -T
+
+use strict;
+use warnings;
+
+#use Cwd 'cwd';
+
+sub main {
+#    my $here = cwd();
+#    warn "$0: Running for $here";
+    my $cfg = Binlinks->new_for_config("./.binlinks.yaml");
+    $cfg->dryrun(0) if @ARGV && $ARGV[0] eq '-y';
+    $cfg->generate;
+}
+
+main();
+
+
+
+package Binlinks;
+
+use strict;
+use warnings;
+
+use YAML qw( Dump LoadFile );
+use File::Temp 'tempfile';
+
+sub new_for_config {
+    my ($proto, $fn) = @_;
+    my $self =
+      bless { config => $fn, dryrun => 1, verbose => 1 },
+	ref($proto) || $proto;
+    $self->_init;
+    return $self;
+}
+
+sub dryrun {
+    my ($self, $set) = @_;
+    $$self{dryrun} = $set if defined $set;
+    return $$self{dryrun};
+}
+
+sub verbose {
+    my ($self, $set) = @_;
+    $$self{verbose} = $set if defined $set;
+    return $$self{verbose};
+}
+
+
+sub noise {
+    my ($self, $fmt, @val) = @_;
+    if ($self->verbose) {
+	if (@val) {
+	    printf($fmt, @val);
+	} else {
+	    print $fmt;
+	}
+    }
+}
+
+sub warn {
+    my ($self, $fmt, @val) = @_;
+
+    if (@val) {
+	warn sprintf("W: $fmt", @val);
+    } else {
+	warn "W: $fmt";
+    }
+}
+
+
+
+sub generate {
+    my ($self) = @_;
+
+    # This is O(n * (N+2)) where n=#objects in dir, N=#projects; it
+    # could be improved, but this seems clearer and probably plenty
+    # fast
+
+    $self->link_projlns;
+    $self->spot_projlns;
+
+    foreach my $proj ($self->shortcuts) {
+	$self->prog_links($proj);
+    }
+
+    $self->spot_nonlinks;
+
+    __write_file(".", ".gitignore", $self->gitignore);
+    __write_file(".", ".binlinks.yaml+", $self->config2yaml);
+}
+
+
+sub link_projlns {
+    my ($self) = @_;
+
+    foreach my $prj ($self->shortcuts) {
+	my $leaf = ",$prj";
+
+	my $path = $self->projln_path($prj);
+	if (!defined $path) {
+	    die "$prj has no path configured, is it a configured projln?\n";
+	}
+
+	$self->_want_link("project shortcut", $leaf, $path);
+    }
+}
+
+sub _want_link {
+    my ($self, $what, $leaf, $dest) = @_;
+
+    my $old;
+    if (-l $leaf) {
+	$old = readlink($leaf);
+    }
+
+    if (defined $old && $old eq $dest) {
+	$self->noise("Exists: %s symlink\t%s -> %s\n",
+		     $what, $leaf, $dest);
+    } else {
+	$self->would
+	  (sub { symlink $dest, $leaf },
+	   (defined $old ? "Replace" : "Create").
+	   " %s symlink\t%s -> %s",
+	   $what, $leaf, $dest);
+    }
+
+    return ();
+}
+
+
+sub spot_projlns {
+    my ($self) = @_;
+
+    my @found;
+    foreach my $leaf (grep { /^,/ } $self->_dir_contents) {
+	my $prj = $leaf;
+	$prj =~ s/^,//;
+
+	if (! -l $leaf) {
+	    $self->warn("Dubious: %s is named like a project-shortcut but is not a symlink\n", $leaf);
+	} elsif (defined $self->projln_path($prj)) {
+	    # we know about this one
+	} else {
+	    my $dest = readlink($leaf);
+	    $self->warn("Missing projln definition %s: found %s pointing to %s\n",
+			$prj, $leaf, $dest);
+	    $$self{'data'}{$prj}{'path'} = $dest;
+	    push @found, $prj;
+	}
+    }
+
+    return @found;
+}
+
+sub _dir_contents {
+    my ($self) = @_;
+
+    opendir my $dh, "." or die "Can't readdir .: $!";
+    my @leaf = grep { $_ !~ /^\.\.?$/ } readdir($dh);
+    closedir $dh;
+
+    return @leaf;
+}
+
+
+sub prog_links {
+    my ($self, $proj) = @_;
+
+    my %have; # key = leaf
+    foreach my $leaf ($self->_dir_contents) {
+	next if /^,/; # handled by spot_projlns
+	next unless -l $leaf;
+
+	my ($whole, $proj, $file) = __read_projprog_link($leaf);
+
+    }
+}
+
+sub __read_projprog_link {
+    my ($fn) = @_; # should be name of a symlink
+
+    my $whole = readlink($fn);
+    if ($whole =~ m{^,([^/]+)/([^/]+)$}) {
+	return ($whole, $1, $2);
+    } else {
+	my ($fn) = ($whole =~ m{([^/]+)$});
+	return ($whole, undef, $fn);
+    }
+}
+
+sub spot_nonlinks {
+    my ($self) = @_;
+
+    foreach my $leaf ($self->_dir_contents) {
+	next if /^,/; # handled by spot_projlns
+	next if /^\.binlinks\.yaml(|~|\+)$/; # config
+
+	my @s = lstat($leaf);
+	my $exe = $s[2] & 0111;
+
+	if (-l _) {
+	    my ($whole, $proj, $file) = __read_projprog_link($leaf);
+	    if (defined $proj && defined $self->projln_path($proj)) {
+		# handled by prog_links, per project
+	    } elsif (defined $proj) {
+		$self->warn("Program %s -> %s links via an unknown project %s",
+			    $leaf, $whole, $proj)
+	    } else  {
+		$self->warn("Program %s -> %s does not link via a project",
+			    $leaf, $whole)
+	    }
+	    if ($file ne $leaf) {
+		$self->warn("Program %s -> %s links to a different name %s",
+			    $leaf, $whole, $file);
+	    }
+	} elsif (-f _ && $exe) {
+	    $self->warn("Program %s has no project (move it and symlink?)", $leaf);
+	} else {
+	    my $wot = -d _ ? "directory" :
+	      -f _ ? "file" : "object";
+	    $self->warn("Unexpected %s\t%s", $wot, $leaf);
+	}
+    }
+
+    return ();
+}
+
+
+sub would {
+    my ($self, $code, $fmt, @vals) = @_;
+    # $code is run if we are NOT in dryrun mode,
+    # it should return true for success else false with $! set
+
+    my $op = sprintf($fmt, @vals);
+    if ($self->dryrun) {
+	$self->noise("Would \l$op\n");
+    } else {
+	my @ret = $code->(@vals);
+	if  (@ret && $ret[0]) {
+	    print "$op: OK\n";
+	} else {
+	    $self->warn("$op: Failed, $!");
+	}
+    }
+}
+
+
+sub config2yaml {
+    my ($self) = @_;
+    return Dump($$self{'data'});
+}
+
+
+sub _init {
+    my ($self) = @_;
+    $$self{'data'} = LoadFile($$self{'config'});
+    return ();
+}
+
+sub shortcuts {
+    my ($self) = @_;
+    return sort grep { $_ !~ /^:/ } keys %{ $$self{'data'} };
+}
+
+
+=head2 projln_path($projln_name)
+
+Returns the path for the project shortcut link target, or undef if
+project is undefined or the destination path is missing.
+
+=cut
+
+sub projln_path {
+    my ($self, $prj) = @_;
+
+    if ($prj =~ /^:/) {
+	die "$prj is not a project shortcut name (colon prefix is for other config)";
+    }
+
+    return $$self{'data'}{$prj}{'path'};
+}
+
+
+sub gitignore {
+    my ($self) = @_;
+
+    my $projlns = join "", map {",$_\n"} $self->shortcuts;
+
+    return sprintf(<<'BOILERPLATE', $projlns);
+
+# emacs
+*~
+.\#*
+\#*\#
+
+# this is auto-generated
+.gitignore
+
+### these symlinks to programs (will be) auto-generated
+#
+ack
+alldb.pl
+
+### symlinks to projects are auto-generated
+#
+%s
+BOILERPLATE
+}
+
+
+sub __write_file {
+    my ($dir, $leaf, $contents, $mode) = @_;
+
+    $mode ||= 0664 & (~ umask);
+    my ($fh, $tmp_fn) = tempfile
+      ("$leaf.XXXXXX", DIR => $dir,
+       UNLINK => 1); # unlink if we haven't renamed it away
+
+    print {$fh} $contents
+      or die "Failed to write to $tmp_fn: $!";
+    close $fh
+      or die "Failed to close $tmp_fn: $!";
+
+    chmod $mode, $tmp_fn
+      or die sprintf("chmod 0%03o %s: %s", $mode, $tmp_fn, $!);
+    rename($tmp_fn, "$dir/$leaf")
+      or die "Rename to $dir/$leaf failed: $!";
+}
+
+1;
+
+
+=head1 INFO
+
+Project shortcut links or "projln" start with "," and point to a
+directory of programs.  This allows the program links to point simply
+to C<,fooproj/myprog> .
+
+=cut
