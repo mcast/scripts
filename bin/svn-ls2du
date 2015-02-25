@@ -1,0 +1,70 @@
+#! /usr/bin/perl
+use strict;
+use warnings;
+
+=head1 NAME
+
+svn-ls2du - estimate size of a svn checkout
+
+=head1 SYNOPSIS
+
+ cd svncheckout
+ svn-ls2du | xdiskusage
+
+=head1 DESCRIPTION
+
+Performs C<svn ls -vR> and uses that to fake up output like C<du -k>
+which is suitable for piping into L<xdiskusage(1)>.
+
+=cut
+
+sub main {
+  die "Takes no args" if @_;
+
+  my $pid = open my $fh, '-|', qw( svn ls -vR )
+    or die "Pipe from svn-ls: $!";
+  my @dirstack; # $fn
+  my %dir; # key = $fn, val = checkout-size/bytes
+  while (<$fh>) {
+    chomp;
+#  27226 web-cosm              Feb 24 14:39 ./
+#  22182 kr2                   Dec 02  2013 perl/scripts/
+#  18022 kr2             10246 Jan 30  2013 perl/scripts/filetrkMonitoring.pl
+    my ($info, $fn) = m{^(.{42}) (.+)$}
+      or die "Choked on '$_'";
+    my ($fsz) = $info =~ m{^\s*\d+\s+\S+\s+(\d*) \w{3} \d{2} (?: \d{4}|\d{2}:\d{2})$}
+      or die "Choked on info '$info' of '$fn'";
+    if ($fsz ne '') {
+      # a file
+      my $dir = pdir($fn);
+      $dir{$dir} += $fsz;
+    } elsif ($fn =~ m{/$}) {
+      # a directory
+      push @dirstack, $fn;
+      $dir{$fn} ||= 0;
+    } else {
+      die "Weird - not file or dir? '$_'";
+    }
+  }
+
+  while (@dirstack) {
+    my $dir = pop @dirstack;
+    # contribute directories to their parents
+    my ($parent) = pdir($dir);
+    $dir{$parent} += $dir{$dir};
+    # output
+    printf "%d\t%s\n", int($dir{$dir} / 1024), ($dir eq './' ? $dir : "./$dir");
+  }
+
+  return 0;
+}
+
+exit main(@ARGV);
+
+
+sub pdir {
+  my ($fn) = @_;
+  return '' if $fn eq './'; # the local root
+  return $1 if $fn =~ m{^(.+/)[^/]+/?$};
+  return './';
+}
