@@ -16,10 +16,27 @@ svn-ls2du - estimate size of a svn checkout
 Performs C<svn ls -vR> and uses that to fake up output like C<du -k>
 which is suitable for piping into L<xdiskusage(1)>.
 
+=head1 OPTIONS
+
+=head2 --ignore-tags-branches
+
+Ignore subdirectory trees of the form C<proj/tags/foo/> or
+C<proj/branches/foo/>.
+
+This does not account for more complicated tree structures, e.g. where
+C<proj> is composite.
+
 =cut
 
 sub main {
-  die "Takes no args" if @_;
+  my @opt = @_;
+
+  my $igbt = 0;
+  if (@opt && $opt[0] =~ /^(-I|--ignore-tags-branches)$/) {
+    $igbt = 1;
+    shift @opt;
+  }
+  die "Syntax: $0 [ --ignore-tags-branches | -I ]\n" if @opt;
 
   my $pid = open my $fh, '-|', qw( svn ls -vR )
     or die "Pipe from svn-ls: $!";
@@ -49,6 +66,7 @@ sub main {
 
   while (@dirstack) {
     my $dir = pop @dirstack;
+    next if $igbt && $dir =~ m{^[^/]+/(tags|branches)/[^/]+/};
     # contribute directories to their parents
     my ($parent) = pdir($dir);
     $dir{$parent} += $dir{$dir};

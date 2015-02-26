@@ -1,0 +1,52 @@
+#! /usr/bin/perl
+use strict;
+use warnings;
+
+
+sub main {
+  my ($repo, $maildomain) = @_;
+  die "Syntax: $0 <svn_url> <maildomain>\n
+ URL should match m{^svn.*://}
+ maildomain should start with '\@'\n"
+    unless $repo && $maildomain && $repo =~ m{^svn.*://} && $maildomain =~ /^@/;
+
+  my @cmd = (qw( svn log -q --xml -r1:HEAD ), $repo);
+  # XXX: option to skip early revisions, for when we're merging to a file
+
+  my $pid = open my $fh, '-|', @cmd
+    or die "@cmd: $!";
+
+  my %author =
+    ('(no author)' => "cvs2svn <cvs2svn$maildomain>");
+
+  # XXX: here, slurp in previous authors.txt for merge
+  #
+  # Without historic data, it's impossible to get the right answer
+  # when users' real names change.
+  #
+  # This risks changing the commitid of existing git-svn exports, if
+  # they are regenerated.  Possibly the merge should be done the other
+  # way around?  But users may rightly want their new name on recent
+  # commits.
+
+  while (<$fh>) {
+    next unless m{<author>(.*?)</author>}; # ceci nest pas un XML parser
+    my $user = $1;
+    next if $author{$user};
+    my @u = getpwnam($user);
+    if (@u) {
+      $u[6] =~ s/,.*//;
+      $author{$user} = "$u[6],svn <$user$maildomain>";
+    } else {
+      $author{$user} = "$user,svn <$user\@??>";
+    }
+  }
+
+  foreach my $user (sort keys %author) {
+    print "$user = $author{$user}\n";
+  }
+
+  return 0;
+}
+
+exit main(@ARGV);
