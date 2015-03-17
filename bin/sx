@@ -1,0 +1,61 @@
+#! /bin/sh
+
+set -e
+XDISPFN="/tmp/$USER.x11"
+
+show_help() {
+    printf 'Syntax: %s\n
+Run "screen -x" after updating the $DISPLAY
+stashed in %s .\n
+To install, add the following line to ~/.bashrc
+  eval "$( sx --setup )"
+\n' "$0" "$XDISPFN"
+}
+
+
+save_DISPLAY() {
+    if [ -n "$DISPLAY" ]; then
+	TMPFN="$( mktemp )"
+	echo "$DISPLAY" >> "$TMPFN"
+	mv --no-target-directory "$TMPFN" "$XDISPFN"
+	unset TMPFN
+    fi
+}
+
+load_DISPLAY() {
+    if [ -f "$XDISPFN" ] && [ -O "$XDISPFN" ]; then
+	_disp="$( cat "$XDISPFN" )"
+	if [ -n "$_disp" ] && [ "$_disp" != "$DISPLAY" ]; then
+	    printf ' export DISPLAY="%s"; echo "DISPLAY changed (was %s, now %s)"\n' \
+		   "$_disp" "${DISPLAY:-''}" "$_disp"
+	fi
+    fi
+}
+
+main() {
+    case "$1" in
+	--setup)
+	    # Called from .bashrc with
+	    #   eval "$( sx --setup )"
+	    if [ "$TERM" = 'screen' ]; then
+		printf " PROMPT_COMMAND='eval \"\$( sx --tell )\"'\n"
+	    fi
+	    ;;
+	--tell)
+	    # Called per prompt
+	    load_DISPLAY
+	    ;;
+	"")
+	    save_DISPLAY
+	    exec screen -x
+	    ;;
+	-h | --help)
+	    show_help
+	    ;;
+	*)
+	    echo "Bad options $@" >&2
+	    exit 4
+    esac
+}
+
+main "$@"
