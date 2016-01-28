@@ -1,0 +1,12 @@
+#! /bin/sh
+
+# Print svn URL for current directory,
+# or the svn root if given -r
+
+if [ "$1" = "-r" ]; then
+   tag="Repository Root"
+else
+    tag="URL"
+fi
+
+svn info | perl -ne "print qq{\$1\\n} if m{^$tag:\\s*(.*)}"
