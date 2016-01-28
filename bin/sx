@@ -44,6 +44,9 @@ do_connect() {
 }
 
 do_setup_pre() {
+    if [ $( hostname -s ) == 'cgp-login' ]; then
+	cd ~/mail
+    fi
 }
 
 
