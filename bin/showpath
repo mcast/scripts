@@ -16,10 +16,13 @@ showpath - display path variables in a human-friendly way
   showpath MANPATH	# look it up in the environment
   showpath $SOMEPATH	# show path after expansion by the shell
 
+  # show which elements contain ls, cp
+  showpath PATH PERL5LIB -- ls cp Test::More
+  # (doesn't search @INC elements added by Perl)
 
 =head1 AUTHOR
 
- Copyright (c) 2009 Genome Research Ltd.
+ Copyright (c) 2009, 2016 Genome Research Ltd.
  Author: Matthew Astley <mca@sanger.ac.uk>
 
 This file is part of "mca-wtsi/scripts".
@@ -41,11 +44,25 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 
 sub main {
-    showpath(@ARGV ? @ARGV : DEFAULT_PATHS);
+    showpath(@ARGV);
 }
 
 sub showpath {
     my @items = @_;
+    unshift @items, DEFAULT_PATHS if !@items || $items[0] eq '--';
+
+    my @find;
+    if (my ($idx) = grep { $items[$_] eq '--' } (0 .. $#items)) {
+      (undef, @find) = splice @items, $idx;
+    }
+    push @find, map {
+      my $f = $_;
+      if ($f =~ s{::}{/}g) {
+	("$f.pm");
+      } else {
+	();
+      }
+    } @find;
 
     for (my $i=0; $i < @items; $i++) {
 	my $var = $items[$i];
@@ -67,7 +84,7 @@ sub showpath {
 	}
 
 	# display
-        my %seen;
+	my %seen;
 	print "$key:\n";
 	foreach my $part (split /:/, $val) {
 	    $part =~ s{/+$}{};
@@ -89,6 +106,15 @@ sub showpath {
 	    }
 
 	    printf("  %-60s %s%s\n", $part, (join ",", @flag), $symlink);
+
+	    # show which of @find we see in here
+	    foreach my $find (@find) {
+	      my $fn = "$part/$find";
+	      next unless -e $fn;
+	      my $type = -f _ ? 'file' : (-d _ ? 'dir' : 'other');
+	      $type = "symlink to $type" if -l $fn; # TODO: share readlink stuff above
+	      printf("      %-60s %s\n", $find, $type);
+	    }
 	}
 	print "\n";
     }
