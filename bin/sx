@@ -32,6 +32,21 @@ load_DISPLAY() {
     fi
 }
 
+do_connect() {
+    if screen -ls | grep -q 'No Sockets found'; then
+	uptime
+	printf "\x1B[35m *** Starting new screen session *** \x1B[00m\n\n[ press enter ]"
+	read
+	do_setup_pre
+	screen -dm
+    fi
+    exec screen -x
+}
+
+do_setup_pre() {
+}
+
+
 main() {
     case "$1" in
 	--setup)
@@ -47,7 +62,7 @@ main() {
 	    ;;
 	"")
 	    save_DISPLAY
-	    exec screen -x
+	    do_connect
 	    ;;
 	-h | --help)
 	    show_help
