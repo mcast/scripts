@@ -4,6 +4,28 @@ use warnings;
 use Digest::SHA 'sha1_hex';
 #use YAML 'Dump';
 
+=head1 NAME
+
+fragsum - spot duplicate data in large files
+
+=head1 SYNOPSIS
+
+ fragsum file0 .. fileN | less
+
+=head1 DESCRIPTION
+
+Chops each file into chunks (currently on 64 KiB boundaries) and
+sha1_hex the pieces.  Look for runs of duplicates and NUL blocks.
+
+This is a quick hack.
+
+=head1 SEE ALSO
+
+https://en.wikipedia.org/wiki/MinHash for something smarter.
+
+=cut
+
+
 sub main {
   my @f = @ARGV;
   my %seen;
