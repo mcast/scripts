@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use Digest::SHA 'sha1_base64';
+use Digest::SHA 'sha1_hex';
 #use YAML 'Dump';
 
 sub main {
@@ -20,19 +20,44 @@ exit main();
 
 sub fragsum {
   my ($seen, $fn, $fh) = @_;
-  my $chunk = 4096;
+  my $chunk = 65536;
   my $nread = -1;
   my $buff;
+  my $nulbuff = "\x00" x $chunk;
+  my %since;
   for (my $i=0; $nread; $i++) {
-    $nread = read($fh, $buff, 4096);
-    die "Read $fn: $! at chunk #$i * ${chunk}b" unless defined $nread;
-    my $d = sha1_base64($buff);
-    my $s = $seen->{$d} ||= [];
-    my @seen = @$s;
-    printf("%s  %s:%s\n", $d, $fn, $i) if @seen;
-    print "   also in @seen\n" if @seen && $buff ne ("\x00" x $chunk);
-    push $s, "$fn:$i";
+    $nread = read($fh, $buff, $chunk);
+    if (!defined $nread) {
+      die "Read $fn: $! at chunk #$i * ${chunk}b";
+    } elsif (!$nread) {
+      foreach my $k (keys %since) {
+	my $s = delete $since{$k};
+	printf("%-40s  %s:%s..%s\n", "  $k", $fn, $s, $i-1) if defined $s;
+      }
+      printf("%-40s  %s:%s\n", '  EOF', $fn, $i);
+    } else {
+      my $d = sha1_hex($buff);
+      my $s = $seen->{$d} ||= [];
+      my @seen = @$s;
+      my %is = (nul => $buff eq $nulbuff, dup => @seen > 0);
+      foreach my $k (keys %is) {
+	if ($is{$k}) {
+	  if (defined $since{$k}) {
+	    $is{$k} = "$since{$k}..$i";
+	  } else {
+	    $since{$k} = $i;
+	  }
+	} else {
+	  my $s = delete $since{$k};
+	  printf("%-40s  %s:%s..%s\n", "  $k", $fn, $s, $i-1) if defined $s;
+	}
+      }
+      printf("%-40s  %s:%s%s\n", $d, $fn, $i, $nread == $chunk ? '' : "($nread/$chunk bytes)") if $is{dup};
+      printf("%40s  %s\n", 'also in', "@seen") if $is{dup} && !$is{nul};
+      push $s, "$fn:$i" unless $is{nul};
+    }
   }
+
   return;
 }
 
