@@ -1,0 +1,38 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Digest::SHA 'sha1_base64';
+#use YAML 'Dump';
+
+sub main {
+  my @f = @ARGV;
+  my %seen;
+  foreach my $f (@f) {
+    open my $fh, '<', $f or die "Read $f: $!";
+    fragsum(\%seen, $f, $fh);
+  }
+#  print Dump({ seen => \%seen })
+  return 0;
+}
+
+exit main();
+
+
+sub fragsum {
+  my ($seen, $fn, $fh) = @_;
+  my $chunk = 4096;
+  my $nread = -1;
+  my $buff;
+  for (my $i=0; $nread; $i++) {
+    $nread = read($fh, $buff, 4096);
+    die "Read $fn: $! at chunk #$i * ${chunk}b" unless defined $nread;
+    my $d = sha1_base64($buff);
+    my $s = $seen->{$d} ||= [];
+    my @seen = @$s;
+    printf("%s  %s:%s\n", $d, $fn, $i) if @seen;
+    print "   also in @seen\n" if @seen && $buff ne ("\x00" x $chunk);
+    push $s, "$fn:$i";
+  }
+  return;
+}
+
