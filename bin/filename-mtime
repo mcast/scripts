@@ -1,0 +1,19 @@
+#! /bin/bash
+# Bash for regex
+
+set -e
+set -o pipefail
+for f in "$@"; do
+    if [[ "$f" =~ -[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]t[0-9][0-9][0-9][0-9][0-9][0-9]. ]]; then
+	echo $f is stamped
+    else
+	ts="$( stat --printf=%y "$f" | cut -d. -f1 | tr ' ' t | tr -d :- )"
+	perl -e '
+ my $o = shift;
+ my $t = shift;
+ my $n = $o;
+ $n =~ s{\.}{-$t.};
+ rename($o, $n) or die "rename($o -> $n): $!";
+ print "$o -> $n\n"' "$f" "$ts"
+    fi
+done
