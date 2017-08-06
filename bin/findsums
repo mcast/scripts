@@ -1,0 +1,38 @@
+#!/bin/bash
+# Bash for pipefail
+
+set -eu
+set -o pipefail
+
+_syntax() {
+    printf 'Syntax: %s [ -x ] < md5 | sha1 | sha256 ... > <files>+\n
+Run "find <files> [ -xdev ] -type f ... | xargs foosum"
+sending output to stdout.  Exit with error if either part fails.\n\n' "$0"
+    exit 2
+}
+
+[ -n "${1:-}" ] && [ -n "${2:-}" ] || _syntax
+
+findopt=
+case "$1" in
+    -x)
+	findopt=-xdev
+	shift
+	[ -n "${1:-}" ] && [ -n "${2:-}" ] || _syntax
+	;;
+    -*)
+	printf "Error: flag $1 not recognised\n\n" >&2
+	_syntax
+	;;
+    # *) noop
+esac
+
+sumprog=${1}sum
+shift
+
+if ! which $sumprog >/dev/null 2>&1; then
+    printf "Error: program %s not found on PATH\n\n" "$sumprog" >&2
+    _syntax
+fi
+
+find "$@" $findopt -type f -print0 | xargs -r0 $sumprog
