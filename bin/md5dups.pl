@@ -26,7 +26,7 @@ foreach $fn (@ARGV) {
     open INP, "<$fn" or die "Couldn't read '$fn': $!";
     while (<INP>) {
 	chomp;
-	unless ( /^([\da-f]{32,40})[: ][ *](.+)$/i ) {
+	unless ( /^([\da-f]{32,256})[: ][ *](.+)$/i ) {
 	    warn "Ignored bad input line '$_' in $fn";
 	    next;
 	}
