@@ -32,13 +32,30 @@ load_DISPLAY() {
     fi
 }
 
+no_screen_sockets() {
+    screen -ls | grep -q 'No Sockets found'
+}
+
 do_connect() {
-    if screen -ls | grep -q 'No Sockets found'; then
+    if no_screen_sockets; then
 	uptime
+	if [ -z "$SSH_AUTH_SOCK" ]; then
+	    printf "\n\x1B[35m [no ssh-agent - will start one]\x1B[00m\n"
+	    pfx=ssh-agent
+	else
+	    pfx=
+	fi
 	printf "\x1B[35m *** Starting new screen session *** \x1B[00m\n\n[ press enter ]"
 	read
 	do_setup_pre
-	screen -dm
+	# below: messy, possibly fragile, no tests
+	( $pfx screen -Dm ) &
+	echo screen -Dm: pid is $!
+	while no_screen_sockets; do
+	    echo -n .
+	    sleep 0.1
+	done
+	echo
     fi
     exec screen -x
 }
