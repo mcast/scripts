@@ -73,7 +73,11 @@ main() {
 	    # Called from .bashrc with
 	    #   eval "$( sx --setup )"
 	    if [ "$TERM" = 'screen' ]; then
-		printf " PROMPT_COMMAND='eval \"\$( sx --tell )\"'\n"
+		if which screen >/dev/null; then
+		    printf " PROMPT_COMMAND='eval \"\$( sx --tell )\"'\n"
+		else
+		    echo "  * Found no screen(1) here" >&2
+		fi
 	    fi
 	    ;;
 	--tell)
