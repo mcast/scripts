@@ -1,0 +1,67 @@
+#! /usr/bin/env python3
+
+import sys
+import os
+import time
+import shutil
+
+DEFAULT = {
+    'dl_dir': os.environ["HOME"] + "/Downloads",
+    'install_dir': "/media/" + os.environ["USER"] + "/MICROBIT", # assumes Ubuntu or equiv
+    'stash_leaf': 'microbit-hex',
+}
+
+def main(args):
+    if len(args) == 2:
+        dl_dir = args[1]
+    else:
+        dl_dir = DEFAULT['dl_dir']
+    stash_dir = dl_dir + os.sep + DEFAULT['stash_leaf']
+    install_dir = DEFAULT['install_dir']
+    print("Using\n  downloads at " + dl_dir +
+          "\n  install to   " + install_dir +
+          "\n  archive to   " + stash_dir)
+
+    while True:
+        leaf = dir_has_new_hex(dl_dir)
+        if leaf:
+            logtxt("Found " + leaf)
+            use_new_hex(leaf, dl_dir, stash_dir, install_dir)
+        time.sleep(0.5) # polling = simple but inefficient
+        
+    return 11
+
+def use_new_hex(leaf, dl_dir, stash_dir, install_dir):
+    fn = dl_dir + os.sep + leaf
+    shutil.copy(fn, install_dir)
+    logtxt("installed")
+    try:
+        os.mkdir(stash_dir)
+    except FileExistsError:
+        pass # exists, ok
+    os.rename(fn, stash_dir + os.sep + leaf)
+    logtxt("archived\n")
+
+def fn_age(fn):
+    s = os.stat(fn)
+    return time.time() - s.st_mtime
+    
+def dir_has_new_hex(dir):
+    if fn_age(dir) >= 60:
+        return None
+    recent = None
+    for fn in os.listdir(dir):
+        if fn.endswith(os.extsep + "hex"):
+            age = fn_age(dir + os.sep + fn)
+            if age < 60:
+                if not recent or recent[1] > age:
+                    recent = [ fn, age ]
+    if recent:
+        return recent[0]
+    else:
+        return None
+
+def logtxt(txt):
+    print(time.strftime('%Y-%m-%d %H:%M:%S ', time.localtime()) + txt)
+
+sys.exit(main(sys.argv))
