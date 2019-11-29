@@ -1,0 +1,130 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use YAML 'Dump';
+use List::Util 'sum';
+use Sys::Hostname 'hostname';
+
+=head1 NAME
+
+lsof_growfiles - display writable files of processes which are writing
+
+=head1 DESCRIPTION
+
+This is a filter on F<lsof/8> in its streaming mode.  It collects
+stats about total file size of visible processes (root: all, other
+user: just ours).
+
+One the next scan, print for any process which has grown its total
+file size.  Basic process information plus writable non-zero files.
+
+=head2 Messy stuff
+
+Contains no command flags, this is a quick'n'dirty command for "help,
+what's filling my disk?"
+
+Makes ten loops and stops.
+
+Ignores itself.
+
+=head2 LSF farm scan
+
+ for h in $( bhosts | cut -f1 -d' ' | tail -n+2 ); do echo $h; ssh -f $h lsof_growfiles; done
+
+This is ugly, could run you out of file descriptors, and can produce
+broken interleaved output.  But it's fairly quick.
+
+
+=head1 AUTHOR
+
+(c) 2019 Genome Research Ltd / Matthew Astley
+
+[need to do the GPL code release thing for work]
+
+=cut
+
+
+sub main {
+  my $host = hostname();
+  my %pid;
+  my @cmd =
+    ('lsof',
+     ($< == 0 ? () : ("-u$<")), # just our processes, unless we can see all
+     '-Fp0cknutsDiFfaNrRS', # output format
+     '-r1m%s'); # repeat mode & marker (unixtime)
+  local $/ = "\x00"; # input record separator
+
+  my $lsof_pid = open my $fh, '-|', @cmd
+    or die "pipe from '@cmd' failed: $!";
+
+  my %procs; # key = pid, value = \%proc
+  my %proc; # process being seen now
+  my %fd;   # fd being seen now (in context of a process)
+  my $push_fd   = sub {
+    return unless %fd;
+    $proc{fd} ||= [];
+    if (!exists $fd{t} && $fd{f} eq 'NOFD') {
+      # some failure to read stuff?  ignore probably irrelevant
+#} elsif ($fd{t} eq 'REG') { # ignore
+    } elsif ($fd{t} =~ m{^(CHR|unix|IPv[46]|DIR|FIFO|unknown)$}) {
+      # ignore some networky types
+    } elsif ($fd{a} eq 'r') {
+      # skip read-only file
+#    } elsif ($fd{a} eq ' ') { # file mmap'd, might be open for writing?
+    } else {
+      push @{ $proc{fd} }, { %fd }
+    }
+    %fd = ();
+  };
+  my $push_proc = sub {
+    $push_fd->() if %fd;
+    my $pid = delete $proc{p};
+    my @fd = @{ $proc{fd} || [] };
+    if (defined $pid && @fd) {
+      $proc{totsz} = sum( map { $_->{s} || 0 } @fd);
+      if ($procs{$pid}) {
+	# data from previous scan
+	my ($sz1, $sz0) = ($proc{totsz}, $procs{$pid}{totsz});
+	my $size_incr = (defined $sz0 && defined $sz1) && $sz1 - $sz0;
+	if ($size_incr) {
+	  my $rate = $size_incr / 1024 / 1024; # TODO: assumption is exactly one second per loop (which it may well not be)
+	  printf "%s\t%s\tincr:%.3f MiB/sec\tppid:%s\t%s\n", $host, $pid, $rate, @proc{qw{ R c }};
+#	  print Dump(\%proc) if $size_incr;
+	  printf "%s\t%s\t\ts:%s\tk:%s\tn:%s\n", $host, $pid, @{$_}{qw{ s k n }} foreach (grep { $_->{a} ne ' ' && $_->{s} > 0 } @fd);
+	}
+      }
+      $procs{ $pid } = { %proc }
+	unless $pid == $$ || $pid == $lsof_pid; # completely ignore self
+    }
+    %proc = ();
+  };
+
+  my $loopcount = 10; # stop on zero; below zero = non-stop
+  while (<$fh>) {
+    chomp; # trailing NUL
+#    print "\n" if
+    s/^\n//; # optional leading \n
+    $push_proc->() if /^p/;
+    $push_fd->()   if /^f/;
+    if (/^([pcuR])(.*)$/) { # process info
+      $proc{$1} = $2;
+    } elsif (/^([ftDrsikan FN])(.*)$/) { # fd info, leading \n from previous
+      warn "repeat $1" if exists $fd{$1};
+      $fd{$1} = $2;
+    } elsif (/^m(\d+)$/) {
+      $loopcount --;
+      last if !$loopcount;
+      # repeat at time=$1
+#      print Dump(\%procs);
+      # TODO: list pids seen, here delete any no longer seen
+    } else {
+      die "Unknown lsof field '$_'";
+    }
+#    print substr($_, 0, 1);
+  }
+  close $fh;
+  die "pipe from '@cmd' failed ?=$?" if $? && $? != 13; # 13 = broken pipe <= we stopped listening
+  return 0;
+}
+
+exit main();
