@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use YAML 'Dump';
-use List::Util 'sum';
+use List::Util qw( sum first );
 use Sys::Hostname 'hostname';
 
 =head1 NAME
@@ -44,8 +44,21 @@ broken interleaved output.  But it's fairly quick.
 =cut
 
 
+sub lsof_available {
+  my @path = split /:/, $ENV{PATH};
+  return 1 if first { -x "$_/lsof" } @path;
+  if (-x '/usr/sbin/lsof' && -f _) {
+    $ENV{PATH} = "/usr/sbin:$ENV{PATH}";
+    warn "extended PATH";
+    return 1;
+  }
+  die join "\n  ", "Can't find lsof(8) on path", @path, '  ';
+}
+
 sub main {
   my $host = hostname();
+  lsof_available();
+
   my %pid;
   my @cmd =
     ('lsof',
