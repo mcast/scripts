@@ -100,7 +100,6 @@ sub lsof_available {
   return 1 if first { -x "$_/lsof" } @path;
   if (-x '/usr/sbin/lsof' && -f _) {
     $ENV{PATH} = "/usr/sbin:$ENV{PATH}";
-    warn "extended PATH";
     return 1;
   }
   die join "\n  ", "Can't find lsof(8) on path", @path, '  ';
