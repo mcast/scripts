@@ -153,7 +153,7 @@ sub main {
       $proc{totsz} = sum( map { $_->{s} || 0 } @fd);
       if ($procs{$pid}) {
 	my @lert;
-	push @lert, 'BIG'  if grep { $_->{s} > $bytes_big } @fd;
+	push @lert, 'BIG'  if grep { $_->{s} && $_->{s} > $bytes_big } @fd;
 	# data from previous scan
 	my ($sz1, $sz0) = ($proc{totsz}, $procs{$pid}{totsz});
 	my $size_incr = (defined $sz0 && defined $sz1) && $sz1 - $sz0;
@@ -163,7 +163,7 @@ sub main {
 	  my $alert = @lert ? "\t${ANSI_HI}alert:".(join ',', @lert).$ANSI_LO : '';
 	  printf "%s\t%s\tincr:%.3f MiB/sec%s\tppid:%s\t%s\n", $host, $pid, $rate, $alert, @proc{qw{ R c }};
 #	  print Dump(\%proc) if $size_incr;
-	  printf "%s\t%s\t%s\tsz:%.3f MiB\tk:%s\tn:%s\n", $host, $pid, $alert, $_->{s} / $MiB, @{$_}{qw{ k n }}
+	  printf "%s\t%s\t%s\tsz:%.3f MiB\tk:%s\tn:%s\n", $host, $pid, $alert, (defined $_->{s} ? $_->{s} / $MiB : '??'), @{$_}{qw{ k n }}
 	    foreach (grep { $_->{a} ne ' ' && $_->{s} > 0 } @fd);
 	}
       }
