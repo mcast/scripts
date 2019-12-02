@@ -35,6 +35,24 @@ This is ugly, could run you out of file descriptors, and can produce
 broken interleaved output.  But it's fairly quick.
 
 
+=head1 KNOWN BUGS
+
+Once it Works For Me and my fine sysads, this script is likely to
+become abandonware.  Pull requests are still welcome, but if you're
+planning a lot of work you might be better off project-forking.
+
+Doesn't forget processes which are reaped.  In longer runs this could
+cause bloat and minor confusion when the pid is recycled.
+
+"MiB/sec" is based on the wild assumption that inter-repeat scan time
+from lsof is stable at 1 sec.
+
+Might be blind to a rapidly forking daemon which has short-lived child
+processes writing to its open FDs?
+
+Files writable from multiple processes will be listed more than once.
+
+
 =head1 AUTHOR
 
 (c) 2019 Genome Research Ltd / Matthew Astley
