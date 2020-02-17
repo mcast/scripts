@@ -1,0 +1,71 @@
+#! /usr/bin/env perl
+use strict;
+use warnings;
+use YAML qw( LoadFile Dump );
+
+sub main {
+  my @arg = @_;
+  my $config_fn = "$0.yaml";
+  my %cfg = %{ LoadFile($config_fn) };
+#  print STDERR YAML::Dump({ cfg => \%cfg });
+
+  if ("@arg" eq '--bash-setup') {
+    # Hook this in with
+    #   eval "$( ~/bin/_proj_jump --bash-setup )"
+    print <<"BASHFN";
+function ProjJump () {
+  eval "\$( $0 --show-bash "\$@" )"
+}
+function _proj_jump_projects () {
+  echo wibble dibble
+  echo dobble
+}
+complete -C "'$0' --bash-projects" ProjJump
+BASHFN
+
+  } elsif ("@arg" =~ /^--bash-projects\b/) {
+    # tab completion, hooked by "complete ..." above
+    print map {"$_\n"} sort keys %{ $cfg{projects} };
+
+  } elsif (@arg && $arg[0] =~ '^--show') {
+    # show a project
+    my ($mode) = ($arg[0] =~ /^--show-(\S+)$/)
+      or die "Can't get output mode from flag '$arg[0]'";
+    my $proj = $arg[1];
+    $proj = '' if !defined $proj;
+    die "Only output mode is bash, but $arg[0] was requested"
+      unless $mode eq 'bash';
+
+    die join '', "Syntax: ProjJump <proj>\nwith proj from\n  ",
+      map {"  $_\n"} sort keys %{ $cfg{projects} }
+      if @arg > 2 || !exists $cfg{projects}{$proj};
+
+    my $script = $cfg{projects}{$proj};
+#    print STDERR Dump({ "script($proj)" => $script });
+    print STDERR join '', map {"> $_\n"} @$script;
+    print        join '', map {"$_\n"}   @$script;
+
+  } else {
+    die "Syntax: $0 { --bash-setup | --show-bash <projname> }\n
+Do alias setup for Bash login shell, or
+Print setup for that project.\n\nConfiguration is at\n  $config_fn\n
+Bare template config\n@{[ show_template() ]}...
+";
+  }
+
+  return 0;
+}
+
+
+END {
+  print qq{echo "Nothing done for 'ProjJump @ARGV', exitcode $?"\n} if $?;
+}
+
+exit main(@ARGV);
+
+
+sub show_template {
+  my %cfg =
+    (projects => { foo => [ 'cd ~/work/foo', 'module load foodeps' ] });
+  return Dump(\%cfg);
+}
