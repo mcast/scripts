@@ -25,7 +25,11 @@ BASHFN
 
   } elsif ("@arg" =~ /^--bash-projects\b/) {
     # tab completion, hooked by "complete ..." above
-    print map {"$_\n"} sort keys %{ $cfg{projects} };
+    my (undef, $cmd, $part, $prevword) = @arg;
+    return 0 unless $cmd eq 'ProjJump' && $prevword eq 'ProjJump';
+    $part = qr{^\Q$part};
+#    print STDERR "\n\n>>@{[ join ':', @arg ]}>>$part<<\n\n";
+    print map {"$_\n"} grep { $_ =~ $part } sort keys %{ $cfg{projects} };
 
   } elsif (@arg && $arg[0] =~ '^--show') {
     # show a project
