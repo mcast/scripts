@@ -40,28 +40,31 @@ do_connect() {
     if no_screen_sockets; then
 	uptime
 	if [ -z "$SSH_AUTH_SOCK" ]; then
-	    printf "\n\x1B[35m [no ssh-agent - will start one]\x1B[00m\n"
+	    printf "\n\e[35m [no ssh-agent - will start one]\e[00m\n"
 	    pfx=ssh-agent
 	else
 	    pfx=
 	fi
-	printf "\x1B[35m *** Starting new screen session *** \x1B[00m\n\n[ press enter ]"
-	read
+	printf "\e[35m *** Starting new screen session *** \e[00m\n"
 	do_setup_pre
 	# below: messy, possibly fragile, no tests
 	( $pfx screen -Dm ) &
 	echo screen -Dm: pid is $!
 	while no_screen_sockets; do
 	    echo -n .
-	    sleep 0.1
+	    sleep 1
 	done
+	echo
+#	ps xf
+	printf "\n[ press enter ]"
+	read _ignore
 	echo
     fi
     exec screen -x
 }
 
 do_setup_pre() {
-    if [ $( hostname -s ) == 'cgp-login' ]; then
+    if [ $( hostname -s ) = 'cgp-login' ]; then
 	cd ~/mail
     fi
 }
