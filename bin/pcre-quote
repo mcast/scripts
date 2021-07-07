@@ -1,0 +1,28 @@
+#! /usr/bin/perl
+use strict;
+use warnings;
+use Getopt::Long qw( :config bundling );
+
+sub main {
+  my %opt = (left => '', right => '');
+  GetOptions (\%opt, 'null|z!', 'left|L=s', 'right|R=s', 'help|h!');
+  die qq{Syntax: $0 [-z] [ -L ^ ] [ -R \$ ]
+
+  --null -z	NUL-separated lines; default is newline
+  --left -L	set the left-appended string; default nothing
+  --right -R	set the right-appended string; default nothing
+
+nb. quotemeta("\\x00") = backslashed literal-NUL, not '\\x00'
+} if $opt{help};
+
+  $/ = "\x00" if $opt{null};
+
+  while (<>) {
+    chomp;
+    my $out = $opt{left} . quotemeta($_) . $opt{right};
+    print $out, $/;
+  }
+  return 0;
+}
+
+exit main();
