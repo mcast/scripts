@@ -1,0 +1,14 @@
+#! /bin/sh
+
+set -e
+DU1_TMP="$( mktemp -t mca.du1 )"
+DU2_TMP="$( mktemp -t mca.du2 )"
+DU3_TMP="$( mktemp -t mca.du3 )"
+chmod 0600 "$DU1_TMP" "$DU2_TMP" "$DU3_TMP"
+
+du -kxa ~ /  >> "$DU1_TMP"  2>> "$DU2_TMP"                || true
+tail -n1 "$DU2_TMP" | grep -vE 'Operation not permitted'  || true
+
+cat "$DU1_TMP" "$DU2_TMP" | gzip -9 >> "$DU3_TMP"
+rm "$DU1_TMP" "$DU2_TMP"
+mv -v "$DU3_TMP" ~/tmp/du.mca.gz
