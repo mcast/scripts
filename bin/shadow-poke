@@ -1,56 +1,69 @@
 #! /usr/bin/python3
 
-import crypt,getpass
+import crypt, getpass
 import sys
 import os
 import time
 import tempfile
 
+
 def syntax(why=None):
-  print("Syntax: $0 .../etc/shadow username newpass\n")
-  if why:
-      print(why)
-  exit(0)
+    print("Syntax: $0 .../etc/shadow username newpass\n")
+    if why:
+        print(why)
+    exit(0)
+
 
 def mkhash(user, pss):
-    salt = crypt.mksalt(crypt.METHOD_SHA512) # this could be highly system-dependent
+    salt = crypt.mksalt(crypt.METHOD_SHA512)  # this could be highly system-dependent
     # thanks Cristian Ciupitu 2014
     # https://unix.stackexchange.com/questions/158400/etc-shadow-how-to-generate-6-s-encrypted-password#comment259421_158402
     return crypt.crypt(pss, salt)
 
+
 def main():
-    if '-h' in sys.argv or '--help' in sys.argv:
+    if "-h" in sys.argv or "--help" in sys.argv:
         syntax()
     if len(sys.argv) not in range(3, 5):
         syntax(f"len(argv) = {len(sys.argv)}")
 
     (script, shadow, user, pss) = sys.argv
     if not os.path.isfile(shadow):
-        raise Exception('Shadow file does not exist', { 'shadow': shadow })
+        raise Exception("Shadow file does not exist", {"shadow": shadow})
 
-    new_shadow = ''
-    with open(shadow, encoding='ascii') as f:
+    new_shadow = ""
+    with open(shadow, encoding="ascii") as f:
         for line in f:
-            fields = line.split(':')
+            fields = line.split(":")
             if fields[0] == user:
-                old = [ *fields ]
+                old = [*fields]
                 fields[1] = mkhash(user, pss)
-                fields[2] = str(int(time.time() / 86400)) # password set, days since 1970
+                fields[2] = str(
+                    int(time.time() / 86400)
+                )  # password set, days since 1970
                 print(f"updated {user},\n  was {old}\n  now {fields}")
-            new_shadow += ':'.join(fields)
+            new_shadow += ":".join(fields)
     ## print(new_shadow, end='')
     replace(shadow, new_shadow)
     return 0
 
+
 def replace(shadow, txt):
     old_stat = os.stat(shadow)
-    out = tempfile.NamedTemporaryFile(mode='w', encoding='ascii', delete=False, prefix='shadow+', dir=os.path.dirname(shadow))
+    out = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="ascii",
+        delete=False,
+        prefix="shadow+",
+        dir=os.path.dirname(shadow),
+    )
     out.file.writelines(txt)
     out.file.close()
     os.chown(out.name, old_stat.st_uid, old_stat.st_gid)
     os.chmod(out.name, old_stat.st_mode)
-    os.rename(shadow, shadow + '~')
+    os.rename(shadow, shadow + "~")
     os.rename(out.name, shadow)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     exit(main())
