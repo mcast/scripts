@@ -1,0 +1,204 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use YAML 'Dump';
+use List::Util qw( sum first );
+use Sys::Hostname 'hostname';
+
+=head1 NAME
+
+lsof_growfiles - display writable files of processes which are writing
+
+=head1 DESCRIPTION
+
+This is a filter on F<lsof/8> in its streaming mode.  It collects
+stats about total file size of visible processes (root: all, other
+user: just ours).
+
+One the next scan, print for any process which has grown its total
+file size.  Basic process information plus writable non-zero files.
+
+Emphasis for big of fast-growing files.  Works on unlinked (deleted)
+files, because lsof can do that.
+
+=head2 Messy stuff
+
+Contains no command flags, this is a quick'n'dirty command for "help,
+what's filling my disk?"
+
+Makes ten loops and stops.
+
+Ignores itself.
+
+=head2 LSF farm scan
+
+ for h in $( bhosts | cut -f1 -d' ' | tail -n+2 ); do echo $h; ssh -f $h lsof_growfiles; done
+
+This is ugly, could run you out of file descriptors, and can produce
+interleaved/broken output.  But it's fairly quick for ~150 hosts.
+
+=head2 Output control and markers
+
+This script intends to list everything that increases, even a little
+bit, in the ten second time window it looks at.
+
+It does exclude itself, as a common false positive, and there are some
+other cavalier assumptions about how the system will behave (as an HPC
+farm node).
+
+After that, output rates and files sizes that look "big or fast" by
+local standards are highlighted with a string like C<alert:$foo>, in
+ANSI colour red.
+
+Units of output are fixed, not auto-scaling, to make simple-minded
+pattern matching easier for the user.
+
+=head2 Test by poking around
+
+I used things like these to see this script work,
+
+ (dd if=/dev/zero bs=1024 count=15728640; sleep 60) > /tmp/$USER.big.junk &
+
+ perl -le '$_="aaaa" x 1024 x 1024; while(1){print}' | delayline -m250 > /tmp/$USER.big.junk &
+ # C<delayline -m250> filter permits one line through per 250millisec
+
+ sleep 50 < /tmp/mca.big.junk & perl -e 'sleep 50' >> /tmp/mca.big.junk &
+ # read-only process (sleep) is not listed, appending process (perl) is
+
+=head1 KNOWN BUGS
+
+Once it Works For Me and my fine sysads, this script is likely to
+become abandonware.  Pull requests are still welcome, but if you're
+planning a lot of work you might be better off project-forking.
+
+Doesn't forget processes which are reaped.  In longer runs this could
+cause bloat and minor confusion when the pid is recycled.
+
+"MiB/sec" is based on the wild assumption that inter-repeat scan time
+from lsof is stable at 1 sec.
+
+Might be blind to a rapidly forking daemon which has short-lived child
+processes writing to its open FDs?
+
+Files writable from multiple processes will be listed more than once.
+
+L<lsof/8>s output of the running command name is quite thin.  We are
+perfectly placed to gather more information.
+
+
+=head1 AUTHOR
+
+(c) 2019 Genome Research Ltd / Matthew Astley
+
+[need to do the GPL code release thing for work]
+
+=cut
+
+
+sub lsof_available {
+  my @path = split /:/, $ENV{PATH};
+  return 1 if first { -x "$_/lsof" } @path;
+  if (-x '/usr/sbin/lsof' && -f _) {
+    $ENV{PATH} = "/usr/sbin:$ENV{PATH}";
+    return 1;
+  }
+  die join "\n  ", "Can't find lsof(8) on path", @path, '  ';
+}
+
+sub main {
+  my $host = hostname();
+  lsof_available();
+
+  my $ANSI_HI = "\x1B[41;33;01m"; # bg red, fg yellow, bold
+  my $ANSI_LO = "\x1B[00m"; # none
+  my $MiB = 1024 * 1024;
+  my $MiB_per_sec_fast = 10;
+  my $bytes_big = 10 * 1024 * $MiB;
+
+  my %pid;
+  my @cmd =
+    ('lsof',
+     ($< == 0 ? () : ("-u$<")), # just our processes, unless we can see all
+     '-Fp0cknutsDiFfaNrRS', # output format
+     '-r1m%s'); # repeat mode & marker (unixtime); see $rate calc
+  local $/ = "\x00"; # input record separator
+
+  my $lsof_pid = open my $fh, '-|', @cmd
+    or die "pipe from '@cmd' failed: $!";
+
+  my %procs; # key = pid, value = \%proc
+  my %proc; # process being seen now
+  my %fd;   # fd being seen now (in context of a process)
+  my $push_fd   = sub {
+    return unless %fd;
+    $proc{fd} ||= [];
+    if (!exists $fd{t} && $fd{f} eq 'NOFD') {
+      # some failure to read stuff?  ignore probably irrelevant
+#} elsif ($fd{t} eq 'REG') { # ignore
+    } elsif ($fd{t} =~ m{^(CHR|unix|IPv[46]|DIR|FIFO|unknown)$}) {
+      # ignore some networky types
+    } elsif ($fd{a} eq 'r') {
+      # skip read-only file
+#    } elsif ($fd{a} eq ' ') { # file mmap'd, might be open for writing?
+    } else {
+      push @{ $proc{fd} }, { %fd }
+    }
+    %fd = ();
+  };
+  my $push_proc = sub {
+    $push_fd->() if %fd;
+    my $pid = delete $proc{p};
+    my @fd = @{ $proc{fd} || [] };
+    if (defined $pid && @fd) {
+      $proc{totsz} = sum( map { $_->{s} || 0 } @fd);
+      if ($procs{$pid}) {
+	my @lert;
+	push @lert, 'BIG'  if grep { $_->{s} && $_->{s} > $bytes_big } @fd;
+	# data from previous scan
+	my ($sz1, $sz0) = ($proc{totsz}, $procs{$pid}{totsz});
+	my $size_incr = (defined $sz0 && defined $sz1) && $sz1 - $sz0;
+	if ($size_incr || @lert) {
+	  my $rate = $size_incr / $MiB; # TODO: assumption is exactly one second per loop (which it may well not be)
+	  push @lert, 'FAST' if $rate >= $MiB_per_sec_fast;
+	  my $alert = @lert ? "\t${ANSI_HI}alert:".(join ',', @lert).$ANSI_LO : '';
+	  printf "%s\t%s\tincr:%.3f MiB/sec%s\tppid:%s\t%s\n", $host, $pid, $rate, $alert, @proc{qw{ R c }};
+#	  print Dump(\%proc) if $size_incr;
+	  printf "%s\t%s\t%s\tsz:%.3f MiB\tk:%s\tn:%s\n", $host, $pid, $alert, (defined $_->{s} ? $_->{s} / $MiB : '??'), @{$_}{qw{ k n }}
+	    foreach (grep { $_->{a} ne ' ' && $_->{s} > 0 } @fd);
+	}
+      }
+      $procs{ $pid } = { %proc }
+	unless $pid == $$ || $pid == $lsof_pid; # completely ignore self
+    }
+    %proc = ();
+  };
+
+  my $loopcount = 10; # stop on zero; below zero = non-stop
+  while (<$fh>) {
+    chomp; # trailing NUL
+#    print "\n" if
+    s/^\n//; # optional leading \n
+    $push_proc->() if /^p/;
+    $push_fd->()   if /^f/;
+    if (/^([pcuR])(.*)$/) { # process info
+      $proc{$1} = $2;
+    } elsif (/^([ftDrsikan FN])(.*)$/) { # fd info, leading \n from previous
+      warn "repeat $1" if exists $fd{$1};
+      $fd{$1} = $2;
+    } elsif (/^m(\d+)$/) {
+      $loopcount --;
+      last if !$loopcount;
+      # repeat at time=$1
+#      print Dump(\%procs);
+      # TODO: list pids seen, here delete any no longer seen
+    } else {
+      die "Unknown lsof field '$_'";
+    }
+#    print substr($_, 0, 1);
+  }
+  close $fh;
+  die "pipe from '@cmd' failed ?=$?" if $? && $? != 13; # 13 = broken pipe <= we stopped listening
+  return 0;
+}
+
+exit main();

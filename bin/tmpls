@@ -1,3 +1,4 @@
 #! /bin/sh
 
-find /tmp /var/tmp /dev/shm -maxdepth 1 -user $USER -print0 | xargs -r0 ls --color -lartd
+find /tmp /var/tmp /dev/shm /run/user/$(id -u) -maxdepth 1 -user $USER -print0 | xargs -r0 ls --color -lartd
+#  perl -l -0 -pe 's/^/>/; s/$/</'

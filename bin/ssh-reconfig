@@ -1,0 +1,24 @@
+#! /bin/sh
+
+set -e
+
+if host casmins 2>&1 >/dev/null; then
+    echo Internal network
+    INTERNAL=direct
+else
+    echo External network, or none
+    INTERNAL=gw
+fi
+
+export INTERNAL
+perl -i~~~ -lpe '
+ use strict;
+ use warnings;
+ if (my ($hosts) = m{^Host\s+(.*)$}) {
+   if (my ($base, $sfx) = $hosts =~ m{^(\w+)_(gw|direct)\b}) {
+     s{\s+$base(\s+|\s*$)}{  };
+     $_ .= " $base" if $sfx eq $ENV{INTERNAL};
+   }
+ }' ~/.ssh/config
+
+grep -E '^Host .*_(gw|direct)' ~/.ssh/config | sed -e 's/^/  /'

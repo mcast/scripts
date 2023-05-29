@@ -1,0 +1,12 @@
+#! /usr/bin/perl -p
+
+use strict;
+use warnings;
+
+s/^(\d+)/ut2iso($1)/e;
+
+sub ut2iso {
+  my ($utime) = @_;
+  my @t = localtime($utime);
+  return sprintf("%04d-%02d-%02d %02d:%02d:%02d", $t[5]+1900, $t[4]+1, @t[3,2,1,0]);
+}

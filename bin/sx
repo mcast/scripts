@@ -32,19 +32,39 @@ load_DISPLAY() {
     fi
 }
 
+no_screen_sockets() {
+    screen -ls | grep -q 'No Sockets found'
+}
+
 do_connect() {
-    if screen -ls | grep -q 'No Sockets found'; then
+    if no_screen_sockets; then
 	uptime
-	printf "\x1B[35m *** Starting new screen session *** \x1B[00m\n\n[ press enter ]"
-	read
+	if [ -z "$SSH_AUTH_SOCK" ]; then
+	    printf "\n\e[35m [no ssh-agent - will start one]\e[00m\n"
+	    pfx=ssh-agent
+	else
+	    pfx=
+	fi
+	printf "\e[35m *** Starting new screen session *** \e[00m\n"
 	do_setup_pre
-	screen -dm
+	# below: messy, possibly fragile, no tests
+	( $pfx screen -Dm ) &
+	echo screen -Dm: pid is $!
+	while no_screen_sockets; do
+	    echo -n .
+	    sleep 1
+	done
+	echo
+#	ps xf
+	printf "\n[ press enter ]"
+	read _ignore
+	echo
     fi
     exec screen -x
 }
 
 do_setup_pre() {
-    if [ $( hostname -s ) == 'cgp-login' ]; then
+    if [ $( hostname -s ) = 'cgp-login' ]; then
 	cd ~/mail
     fi
 }
@@ -56,7 +76,11 @@ main() {
 	    # Called from .bashrc with
 	    #   eval "$( sx --setup )"
 	    if [ "$TERM" = 'screen' ]; then
-		printf " PROMPT_COMMAND='eval \"\$( sx --tell )\"'\n"
+		if which screen >/dev/null; then
+		    printf " PROMPT_COMMAND='eval \"\$( sx --tell )\"'\n"
+		else
+		    echo "  * Found no screen(1) here" >&2
+		fi
 	    fi
 	    ;;
 	--tell)

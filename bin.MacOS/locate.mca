@@ -1,0 +1,3 @@
+#! /bin/sh
+
+zgrep "$@" ~/tmp/du.mca.gz

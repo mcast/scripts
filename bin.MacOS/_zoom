@@ -1,0 +1,8 @@
+#! /bin/sh
+
+url="$1"
+shift
+
+echo "$@"
+
+open -a zoom.us "$url"

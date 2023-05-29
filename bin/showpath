@@ -4,7 +4,7 @@ use strict;
 use warnings ;
 
 use Cwd 'abs_path';
-use constant DEFAULT_PATHS => qw( PATH PERL5LIB LD_LIBRARY_PATH PERL_LOCAL_LIB_ROOT );
+use constant DEFAULT_PATHS => qw( PATH LD_LIBRARY_PATH MANPATH MODULEPATH  PERL5LIB PERL_LOCAL_LIB_ROOT  R_LIBS R_LIBS_USER R_HOME  PYTHONPATH PYTHONHOME VIRTUAL_ENV  );
 
 =head1 NAME
 
@@ -22,7 +22,7 @@ showpath - display path variables in a human-friendly way
 
 =head1 AUTHOR
 
- Copyright (c) 2009, 2016 Genome Research Ltd.
+ Copyright (c) 2009, 2016, 2018, 2020 Genome Research Ltd.
  Author: Matthew Astley <mca@sanger.ac.uk>
 
 This file is part of "mca-wtsi/scripts".
